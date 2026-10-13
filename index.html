@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Colony Flow — клон</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: radial-gradient(circle at 50% 0%, #6a4830, #1e140d 75%);
+    color: #fff4e0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  #app { max-width: 540px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; padding: 8px 10px 10px; gap: 8px; }
+  header { display: flex; align-items: center; gap: 6px; }
+  #title { flex: 1; font-weight: 900; font-size: 18px; line-height: 1.1; }
+  #title small { display: block; font-weight: 600; font-size: 12px; opacity: .7; }
+  .btn {
+    background: linear-gradient(#ffd96b, #f0a92c); color: #4a2a08; border: none; border-radius: 12px;
+    padding: 8px 12px; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 3px 0 #a86a12;
+    font-family: inherit;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #a86a12; }
+  .btn.ghost { background: #4d3727; color: #ffe8c2; box-shadow: 0 3px 0 #22160e; padding: 8px 10px; }
+  .btn.ghost.on { background: #7a5a2a; }
+  #progress { height: 8px; background: #1a110a; border-radius: 6px; overflow: hidden; }
+  #progressFill { height: 100%; width: 0; background: linear-gradient(90deg, #7be36b, #ffd23f); transition: width .15s; }
+  #boardWrap { flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; align-items: center; }
+  canvas#board { display: block; border-radius: 14px; box-shadow: 0 6px 22px rgba(0,0,0,.55); }
+
+  #slots { display: flex; justify-content: center; gap: 7px; }
+  .slot {
+    width: 58px; height: 58px; border-radius: 12px; background: #1d130c; border: 2px dashed #6b4d36;
+    display: flex; align-items: center; justify-content: center; position: relative;
+  }
+  .slot.extra { border-color: #ffd23f; }
+  .box {
+    width: 52px; height: 52px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 18px; color: #fff; position: relative; flex: 0 0 auto;
+    text-shadow: 0 1px 2px rgba(0,0,0,.7), 0 0 3px rgba(0,0,0,.6);
+    box-shadow: inset 0 -6px 0 rgba(0,0,0,.25), inset 0 4px 0 rgba(255,255,255,.35), 0 3px 0 rgba(0,0,0,.4);
+  }
+  .box .ant { position: absolute; bottom: 2px; left: 4px; font-size: 11px; opacity: .85; text-shadow: none; }
+  .slot .box.stuck { filter: grayscale(.6) brightness(.75); }
+  .slot .zzz { position: absolute; top: -9px; right: -6px; font-size: 14px; }
+  #tray {
+    display: flex; justify-content: center; align-items: flex-start; gap: 10px; padding: 10px 8px 8px;
+    background: rgba(0,0,0,.28); border-radius: 14px; min-height: 150px;
+  }
+  .col { display: flex; flex-direction: column; gap: 5px; align-items: center; width: 56px; }
+  .col .box.top { cursor: pointer; }
+  .col .box.top:hover { transform: translateY(-2px); }
+  .col .box.buried { width: 44px; height: 40px; font-size: 14px; opacity: .8; filter: saturate(.75) brightness(.8); }
+  .col .box.buried.b2 { opacity: .6; }
+  .box.hidden { background: repeating-linear-gradient(45deg, #8a8a8a, #8a8a8a 6px, #747474 6px, #747474 12px) !important; }
+  .col .more { font-size: 12px; opacity: .6; font-weight: 700; }
+  .col .empty { width: 52px; height: 52px; border-radius: 10px; border: 2px dashed rgba(255,255,255,.12); }
+  .link {
+    position: absolute; top: -7px; left: -7px; background: #fff; color: #333; border-radius: 9px;
+    font-size: 11px; padding: 1px 4px; text-shadow: none; font-weight: 900; box-shadow: 0 1px 2px rgba(0,0,0,.5);
+  }
+  .box.hint { animation: hint .6s ease-in-out infinite alternate; outline: 3px solid #fff; outline-offset: 2px; }
+  @keyframes hint { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  .pop { animation: pop .25s ease-out; }
+  @keyframes pop { from { transform: scale(.4); } to { transform: scale(1); } }
+
+  #toast {
+    position: fixed; left: 50%; top: 70px; transform: translateX(-50%); background: rgba(20,12,6,.92);
+    padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 14px; pointer-events: none;
+    opacity: 0; transition: opacity .25s; z-index: 20; max-width: 90vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+  #modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  #modal.show { display: flex; }
+  .card {
+    background: linear-gradient(#4f3826, #2f2116); border-radius: 18px; padding: 18px; width: min(92vw, 420px);
+    max-height: 90vh; overflow: auto; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.6); border: 2px solid #7a5a3e;
+  }
+  .card h2 { margin: 0 0 8px; font-size: 24px; }
+  .card p { margin: 6px 0 14px; opacity: .85; }
+  .card .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+  .card canvas { border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+  .lvl {
+    aspect-ratio: 1; border-radius: 10px; background: #5d4330; display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 18px; cursor: pointer; overflow: hidden; border: 2px solid transparent;
+  }
+  .lvl.locked { opacity: .4; cursor: default; }
+  .lvl.cur { border-color: #ffd23f; }
+  .lvl canvas { width: 100%; height: 100%; border-radius: 0; box-shadow: none; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="btn ghost" id="btnLevels" title="Уровни">☰</button>
+    <div id="title">Colony Flow<small id="subtitle"></small></div>
+    <button class="btn ghost" id="btnHint" title="Подсказка">💡</button>
+    <button class="btn ghost" id="btnSpeed" title="Ускорить">⏩</button>
+    <button class="btn ghost" id="btnSound" title="Звук">🔊</button>
+    <button class="btn ghost" id="btnRestart" title="Заново">↻</button>
+  </header>
+  <div id="progress"><div id="progressFill"></div></div>
+  <div id="boardWrap"><canvas id="board"></canvas></div>
+  <div id="slots"></div>
+  <div id="tray"></div>
+</div>
+<div id="toast"></div>
+<div id="modal"><div class="card" id="card"></div></div>
+
+<script>
+'use strict';
+
+// ---------- Data ----------
+const PALETTE = {
+  R: '#e8433f', P: '#ff8fc7', W: '#ffffff', K: '#45333d', S: '#f2c894', O: '#ff9a2e',
+  Y: '#ffd23f', B: '#3f8cff', D: '#2550b8', G: '#9a6233', L: '#4fbf4a',
+  C: '#f5ecd6', A: '#bfe6ff', M: '#c9f2d4', V: '#e0d2ff',
+};
+
+// '.' is the background colour of the picture (it is also made of cubes)
+const ARTS = [
+  { name: 'Сердечко', bg: 'M', rows: [
+    '............',
+    '..RR....RR..',
+    '.RPRR..RRRR.',
+    'RPPRRRRRRRRR',
+    'RPRRRRRRRRRR',
+    'RRRRRRRRRRRR',
+    '.RRRRRRRRRR.',
+    '..RRRRRRRR..',
+    '...RRRRRR...',
+    '....RRRR....',
+    '.....RR.....',
+    '............',
+  ]},
+  { name: 'Мухомор', bg: 'A', rows: [
+    '....RRRR....',
+    '..RRWWRRRR..',
+    '.RRWWRRRWWR.',
+    '.RRRRRRRWWR.',
+    'RRWWRRRRRRRR',
+    'RRWWRRRWWRRR',
+    'RRRRRRRWWRRR',
+    '..SSSSSSSS..',
+    '...SSSSSS...',
+    '...SKSSKS...',
+    '...SSSSSS...',
+    '..LLSSSSLL..',
+    'LLLLLLLLLLLL',
+  ]},
+  { name: 'Яблоко', bg: 'C', rows: [
+    '.....G......',
+    '.....G.LL...',
+    '..RRRGRLLR..',
+    '.RRRRRRRRRR.',
+    'RRWRRRRRRRRR',
+    'RWWRRRRRRRRR',
+    'RWRRRRRRRRRR',
+    'RRRRRRRRRRRR',
+    'RRRRRRRRRRRR',
+    '.RRRRRRRRRR.',
+    '..RRRRRRRR..',
+    '...RRR.RRR..',
+    '............',
+  ]},
+  { name: 'Рыбка', bg: 'A', rows: [
+    '..............',
+    '.....OOOOO....',
+    '...OOOOOOOO..O',
+    '..OWKOOYOOOOOO',
+    '.OOWWOOYOOOOO.',
+    '.OOOOOOYOOOOO.',
+    '..OOOOOYOOOOOO',
+    '...OOOOOOOO..O',
+    '.....OOOOO....',
+    '..............',
+  ]},
+  { name: 'Ракета', bg: 'V', rows: [
+    '.....RR.....',
+    '....RRRR....',
+    '....WWWW....',
+    '...WWWWWW...',
+    '...WWBBWW...',
+    '...WBDDBW...',
+    '...WWBBWW...',
+    '...WWWWWW...',
+    '...WWWWWW...',
+    '..RWWWWWWR..',
+    '.RRWWWWWWRR.',
+    '.RR.WWWW.RR.',
+    '....OYYO....',
+    '.....OO.....',
+    '............',
+  ]},
+  { name: 'Цветок', bg: 'A', rows: [
+    '............',
+    '....PPP.....',
+    '..PPPPPPP...',
+    '.PPPYYYPPP..',
+    '.PPYYYYYPP..',
+    '.PPPYYYPPP..',
+    '..PPPPPPP...',
+    '....PPP.....',
+    '.....L..LL..',
+    '.LL..L.LLL..',
+    '.LLL.LLL....',
+    '...LLL......',
+    '.....L......',
+    '............',
+  ]},
+  { name: 'Смайлик', bg: 'V', rows: [
+    '....YYYY....',
+    '..YYYYYYYY..',
+    '.YYYYYYYYYY.',
+    '.YYKYYYYKYY.',
+    'YYYKYYYYKYYY',
+    'YYYYYYYYYYYY',
+    'YPYYYYYYYYPY',
+    'YYKYYYYYYKYY',
+    '.YYKKYYKKYY.',
+    '.YYYYKKYYYY.',
+    '..YYYYYYYY..',
+    '....YYYY....',
+  ]},
+];
+
+const MAX_LEVEL = ARTS.length * 4;
+const BASE_SLOTS = 5;
+const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const ANT_SPEED = 7;        // cells per second
+const DISPATCH_EVERY = 0.09; // seconds between ants of one box
+
+// ---------- Utils ----------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const $ = id => document.getElementById(id);
+
+// ---------- Board logic (shared by generator and game) ----------
+function buildGrid(n) {
+  const art = ARTS[(n - 1) % ARTS.length];
+  const flip = Math.floor((n - 1) / ARTS.length) % 2 === 1;
+  const C = Math.max(...art.rows.map(r => r.length));
+  const R = art.rows.length;
+  const grid = art.rows.map(row => {
+    const cells = [...row.padEnd(C, '.')].map(ch => ch === '.' ? art.bg : ch);
+    return flip ? cells.reverse() : cells;
+  });
+  return { grid, R, C, art };
+}
+
+// Row R is the tunnel under the picture; the nest sits in its middle.
+function computeReach(grid, R, C) {
+  const N = (R + 1) * C;
+  const dist = new Int32Array(N).fill(-1);
+  const parent = new Int32Array(N).fill(-1);
+  const start = R * C + (C >> 1);
+  dist[start] = 0;
+  const q = [start];
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h], r = (k / C) | 0, c = k % C;
+    for (const [dr, dc] of DIRS) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr > R || nc < 0 || nc >= C) continue;
+      const nk = nr * C + nc;
+      if (dist[nk] >= 0) continue;
+      if (nr < R && grid[nr][nc] !== null) continue;
+      dist[nk] = dist[k] + 1;
+      parent[nk] = k;
+      q.push(nk);
+    }
+  }
+  return { dist, parent, start };
+}
+
+function findExposed(grid, R, C, reach) {
+  const out = [];
+  const mid = C >> 1;
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      if (grid[r][c] === null) continue;
+      let best = -1, bd = 1e9;
+      for (const [dr, dc] of DIRS) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr > R || nc < 0 || nc >= C) continue;
+        if (nr < R && grid[nr][nc] !== null) continue;
+        const nk = nr * C + nc;
+        const d = reach.dist[nk];
+        if (d >= 0 && d < bd) { bd = d; best = nk; }
+      }
+      if (best >= 0) out.push({ r, c, color: grid[r][c], via: best, d: bd, side: Math.abs(c - mid) });
+    }
+  }
+  return out;
+}
+
+const byNearest = (a, b) => a.d - b.d || a.side - b.side || b.r - a.r;
+
+// ---------- Level generator ----------
+// Simulates a colony clearing the picture box by box; the resulting order of
+// boxes is spread over the tray columns so that it stays playable.
+function generateLevel(n) {
+  const { grid, R, C, art } = buildGrid(n);
+  const rng = mulberry32(n * 7919 + 13);
+  const sim = grid.map(r => r.slice());
+  let remaining = R * C;
+  const [minChunk, maxChunk] = n <= 2 ? [8, 18] : [5, 14];
+  const seq = [];
+
+  while (remaining > 0) {
+    let reach = computeReach(sim, R, C);
+    let exp = findExposed(sim, R, C, reach);
+    const counts = {};
+    for (const t of exp) counts[t.color] = (counts[t.color] || 0) + 1;
+    const colors = Object.keys(counts);
+    let total = 0;
+    for (const k of colors) total += Math.sqrt(counts[k]);
+    let pick = rng() * total, color = colors[0];
+    for (const k of colors) { pick -= Math.sqrt(counts[k]); if (pick <= 0) { color = k; break; } }
+
+    const target = minChunk + Math.floor(rng() * (maxChunk - minChunk + 1));
+    let eaten = 0;
+    while (eaten < target) {
+      const cand = exp.filter(t => t.color === color).sort(byNearest);
+      if (!cand.length) break;
+      sim[cand[0].r][cand[0].c] = null;
+      eaten++; remaining--;
+      reach = computeReach(sim, R, C);
+      exp = findExposed(sim, R, C, reach);
+    }
+    seq.push({ color, count: eaten });
+  }
+
+  const nCols = n <= 2 ? 3 : n <= 7 ? 4 : 5;
+  const cols = Array.from({ length: nCols }, () => []);
+  seq.forEach((b, i) => {
+    b.id = i;
+    const minLen = Math.min(...cols.map(c => c.length));
+    const options = cols.map((c, ci) => ci).filter(ci => cols[ci].length <= minLen + 2);
+    b.col = options[Math.floor(rng() * options.length)];
+    cols[b.col].push(b);
+  });
+
+  const linkProb = n >= 5 ? 0.22 : 0;
+  let linkTag = 0;
+  for (let i = 0; i + 1 < seq.length; i++) {
+    const a = seq[i], b = seq[i + 1];
+    if (a.col !== b.col && a.link == null && b.link == null && rng() < linkProb) {
+      a.link = b.id; b.link = a.id;
+      a.linkTag = b.linkTag = String.fromCharCode(65 + (linkTag++ % 26));
+    }
+  }
+
+  const hiddenProb = n >= 3 ? 0.25 : 0;
+  for (const col of cols) {
+    col.forEach((b, k) => {
+      b.hidden = k > 0 && b.link == null && rng() < hiddenProb;
+      b.revealed = k === 0;
+    });
+  }
+
+  return { grid, R, C, art, cols, boxes: seq, total: R * C };
+}
+
+// ---------- Save ----------
+const SAVE_KEY = 'colonyflow-clone-v1';
+let save = { unlocked: 1, done: {}, current: 1 };
+try { save = Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+
+// ---------- Sound ----------
+let audio = null, muted = false, lastBlip = 0;
+function blip(freq, dur = 0.06, vol = 0.05, type = 'sine') {
+  if (muted) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + dur);
+  } catch (e) {}
+}
+
+// ---------- Game state ----------
+let S = null;
+let speedMul = 1;
+const canvas = $('board');
+const ctx = canvas.getContext('2d');
+const view = { cs: 20, dpr: 1 };
+
+function startLevel(n) {
+  const L = generateLevel(n);
+  S = {
+    n, grid: L.grid, R: L.R, C: L.C, art: L.art, cols: L.cols, total: L.total,
+    boxById: Object.fromEntries(L.boxes.map(b => [b.id, b])),
+    maxSlots: BASE_SLOTS, slots: Array(BASE_SLOTS + 1).fill(null),
+    ants: [], eaten: 0, over: false, rescued: false,
+    reserved: new Uint8Array(L.R * L.C), exposedMask: new Uint8Array(L.R * L.C),
+    reach: null, exposed: [], dirty: true, uiDirty: true, trayDirty: true, hintId: null,
+    soil: makeSoil(L.R, L.C, n),
+  };
+  save.current = n; persist();
+  hideModal();
+  $('subtitle').textContent = `Уровень ${n} · ${S.art.name}`;
+  layout();
+  renderUI();
+  if (n === 1) toast('Нажми на коробку — муравьи её цвета пойдут есть кубики');
+  else if (n === 3) toast('Серые коробки «?» показывают цвет, только когда окажутся сверху');
+  else if (n === 5) toast('Коробки с 🔗 одной буквой берутся только парой');
+}
+
+function makeSoil(R, C, seed) {
+  const rng = mulberry32(seed * 31 + 5), dots = [];
+  for (let i = 0; i < R * C * 0.8; i++) dots.push([rng() * C, rng() * (R + 1), 0.04 + rng() * 0.07, rng() < 0.5]);
+  return dots;
+}
+
+function refreshReach() {
+  if (!S.dirty) return;
+  S.reach = computeReach(S.grid, S.R, S.C);
+  S.exposed = findExposed(S.grid, S.R, S.C, S.reach);
+  S.exposedMask.fill(0);
+  for (const t of S.exposed) S.exposedMask[t.r * S.C + t.c] = 1;
+  S.dirty = false;
+}
+
+function pickTarget(color) {
+  let best = null;
+  for (const t of S.exposed) {
+    if (t.color !== color || S.reserved[t.r * S.C + t.c]) continue;
+    if (!best || byNearest(t, best) < 0) best = t;
+  }
+  return best;
+}
+
+function dispatchAnt(t, color) {
+  const C = S.C, nodes = [];
+  for (let k = t.via; k !== -1; k = S.reach.parent[k]) nodes.push(k);
+  nodes.reverse();
+  const pts = nodes.map(k => ({ x: (k % C) + 0.5, y: ((k / C) | 0) + 0.5 }));
+  pts.push({ x: t.c + 0.5, y: t.r + 0.5 });
+  S.reserved[t.r * C + t.c] = 1;
+  S.ants.push({
+    pts, i: 0, t: 0, phase: 'go', color, tr: t.r, tc: t.c, ang: -Math.PI / 2,
+    ox: (Math.random() - 0.5) * 0.36, oy: (Math.random() - 0.5) * 0.36, wig: Math.random() * 6,
+  });
+}
+
+function moveAnt(a, dist) {
+  while (dist > 0 && a.i < a.pts.length - 1) {
+    const p = a.pts[a.i], q = a.pts[a.i + 1];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    const rest = len - a.t;
+    if (dist < rest) { a.t += dist; dist = 0; }
+    else { dist -= rest; a.i++; a.t = 0; }
+  }
+  return a.i >= a.pts.length - 1;
+}
+
+function antPos(a) {
+  if (a.i >= a.pts.length - 1) {
+    const p = a.pts[a.pts.length - 1];
+    return { x: p.x, y: p.y, ang: a.ang };
+  }
+  const p = a.pts[a.i], q = a.pts[a.i + 1];
+  const len = Math.hypot(q.x - p.x, q.y - p.y) || 1, f = a.t / len;
+  a.ang = Math.atan2(q.y - p.y, q.x - p.x);
+  return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, ang: a.ang };
+}
+
+function topGroup(ci) {
+  const b = S.cols[ci][0];
+  if (!b) return null;
+  if (b.link == null) return [b];
+  const p = S.boxById[b.link];
+  const pTop = p && S.cols[p.col][0] === p;
+  return pTop ? [b, p] : { blocked: true };
+}
+
+function freeSlots() {
+  const out = [];
+  for (let i = 0; i < S.maxSlots; i++) if (!S.slots[i]) out.push(i);
+  return out;
+}
+
+function tapColumn(ci) {
+  if (!S || S.over) return;
+  const g = topGroup(ci);
+  if (!g) return;
+  if (g.blocked) { toast('Связанная пара 🔗: вторая коробка ещё не сверху'); shakeCol(ci); blip(160, 0.12, 0.05, 'square'); return; }
+  const free = freeSlots();
+  if (free.length < g.length) { toast(g.length > 1 ? 'Для пары нужно 2 свободных слота' : 'Все слоты заняты'); shakeCol(ci); blip(160, 0.12, 0.05, 'square'); return; }
+  g.forEach((b, k) => {
+    S.cols[b.col].shift();
+    S.slots[free[k]] = { box: b, remaining: b.count, cd: k * 0.05, stuck: false, fresh: true };
+  });
+  for (const col of S.cols) if (col[0]) col[0].revealed = true;
+  S.hintId = null;
+  S.uiDirty = S.trayDirty = true;
+  blip(520, 0.08, 0.06, 'triangle');
+}
+
+function canPullAny() {
+  const free = freeSlots().length;
+  for (let ci = 0; ci < S.cols.length; ci++) {
+    const g = topGroup(ci);
+    if (g && !g.blocked && g.length <= free) return true;
+  }
+  return false;
+}
+
+function update(dt) {
+  if (!S) return;
+  refreshReach();
+
+  for (let i = 0; i < S.maxSlots; i++) {
+    const s = S.slots[i];
+    if (!s) continue;
+    s.cd -= dt;
+    while (s.cd <= 0 && s.remaining > 0) {
+      const t = pickTarget(s.box.color);
+      if (!t) {
+        if (!s.stuck) { s.stuck = true; S.uiDirty = true; }
+        s.cd = 0;
+        break;
+      }
+      if (s.stuck) s.stuck = false;
+      dispatchAnt(t, s.box.color);
+      s.remaining--;
+      s.cd += DISPATCH_EVERY;
+      S.uiDirty = true;
+    }
+    if (s.remaining === 0) { S.slots[i] = null; S.uiDirty = true; blip(880, 0.1, 0.04); }
+  }
+
+  const step = ANT_SPEED * dt;
+  for (let i = S.ants.length - 1; i >= 0; i--) {
+    const a = S.ants[i];
+    if (!moveAnt(a, step)) continue;
+    if (a.phase === 'go') {
+      S.grid[a.tr][a.tc] = null;
+      S.reserved[a.tr * S.C + a.tc] = 0;
+      S.eaten++;
+      S.dirty = true;
+      a.phase = 'back';
+      a.pts = a.pts.slice().reverse();
+      a.i = 0; a.t = 0;
+      const now = performance.now();
+      if (now - lastBlip > 45) { lastBlip = now; blip(600 + Math.random() * 500, 0.04, 0.025); }
+    } else {
+      S.ants.splice(i, 1);
+    }
+  }
+  refreshReach();
+
+  if (!S.over) {
+    if (S.eaten === S.total) {
+      S.over = true;
+      setTimeout(onWin, 900);
+    } else if (!S.ants.some(a => a.phase === 'go')) {
+      const anyMoving = S.slots.some((s, i) => i < S.maxSlots && s && pickTarget(s.box.color));
+      if (!anyMoving && !canPullAny()) {
+        S.over = true;
+        setTimeout(onLose, 600);
+      }
+    }
+  }
+
+  $('progressFill').style.width = (100 * S.eaten / S.total).toFixed(1) + '%';
+  if (S.uiDirty) renderUI();
+}
+
+// ---------- Rendering ----------
+function layout() {
+  if (!S) return;
+  const wrap = $('boardWrap').getBoundingClientRect();
+  const cs = Math.max(6, Math.floor(Math.min(wrap.width / S.C, wrap.height / (S.R + 1))));
+  const dpr = window.devicePixelRatio || 1;
+  view.cs = cs; view.dpr = dpr;
+  const w = cs * S.C, h = cs * (S.R + 1);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+}
+
+function drawTile(x, y, s, col, lit) {
+  const g = Math.max(1, s * 0.04);
+  ctx.fillStyle = col;
+  ctx.fillRect(x + g, y + g, s - 2 * g, s - 2 * g);
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.fillRect(x + g, y + g, s - 2 * g, s * 0.16);
+  ctx.fillStyle = 'rgba(0,0,0,.2)';
+  ctx.fillRect(x + g, y + s - g - s * 0.16, s - 2 * g, s * 0.16);
+  if (!lit) { ctx.fillStyle = 'rgba(35,18,6,.25)'; ctx.fillRect(x, y, s, s); }
+}
+
+function drawAnt(x, y, ang, col, carry, tm, cs) {
+  const s = cs * 0.1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.strokeStyle = '#2a170c';
+  ctx.lineWidth = Math.max(1, s * 0.35);
+  ctx.lineCap = 'round';
+  const w = Math.sin(tm * 22) * s * 0.7;
+  ctx.beginPath();
+  for (let k = -1; k <= 1; k++) {
+    const lx = k * s * 0.9, sw = (k % 2 === 0 ? w : -w);
+    ctx.moveTo(lx, 0); ctx.lineTo(lx + sw, -s * 1.7);
+    ctx.moveTo(lx, 0); ctx.lineTo(lx - sw, s * 1.7);
+  }
+  ctx.moveTo(s * 1.6, -s * 0.3); ctx.lineTo(s * 2.6, -s * 1.1);
+  ctx.moveTo(s * 1.6, s * 0.3); ctx.lineTo(s * 2.6, s * 1.1);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.lineWidth = Math.max(1, s * 0.3);
+  for (const [bx, r] of [[-s * 1.6, s * 1.15], [0, s * 0.75], [s * 1.35, s * 0.8]]) {
+    ctx.beginPath(); ctx.ellipse(bx, 0, r, r * 0.85, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  if (carry) {
+    const c = s * 1.5;
+    ctx.fillStyle = carry;
+    ctx.fillRect(s * 2.1, -c / 2, c, c);
+    ctx.strokeRect(s * 2.1, -c / 2, c, c);
+  }
+  ctx.restore();
+}
+
+function draw(tm) {
+  if (!S) return;
+  const cs = view.cs, R = S.R, C = S.C;
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  const W = C * cs, H = (R + 1) * cs;
+  ctx.fillStyle = '#6b4a30';
+  ctx.fillRect(0, 0, W, H);
+  for (const [dx, dy, r, light] of S.soil) {
+    ctx.fillStyle = light ? 'rgba(255,220,170,.08)' : 'rgba(0,0,0,.12)';
+    ctx.beginPath(); ctx.arc(dx * cs, dy * cs, r * cs, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#3a2516';
+  for (let r = 0; r < R; r++)
+    for (let c = 0; c < C; c++)
+      if (S.grid[r][c] === null) ctx.fillRect(c * cs, r * cs, cs + 0.5, cs + 0.5);
+  ctx.fillRect(0, R * cs, W, cs);
+
+  const nx = ((C >> 1) + 0.5) * cs, ny = (R + 0.5) * cs;
+  const grd = ctx.createRadialGradient(nx, ny, cs * 0.1, nx, ny, cs * 0.75);
+  grd.addColorStop(0, '#000');
+  grd.addColorStop(0.7, '#1a0f07');
+  grd.addColorStop(1, 'rgba(26,15,7,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.ellipse(nx, ny, cs * 0.9, cs * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      const k = S.grid[r][c];
+      if (k === null) continue;
+      drawTile(c * cs, r * cs, cs, PALETTE[k], S.exposedMask[r * C + c] === 1);
+    }
+  }
+
+  for (const a of S.ants) {
+    const p = antPos(a);
+    const k = a.i >= a.pts.length - 2 ? 0.3 : 1;
+    drawAnt((p.x + a.ox * k) * cs, (p.y + a.oy * k) * cs, p.ang, PALETTE[a.color],
+      a.phase === 'back' ? PALETTE[a.color] : null, tm + a.wig, cs);
+  }
+}
+
+function boxEl(b, opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'box';
+  const hidden = b.hidden && !b.revealed;
+  if (hidden) { el.classList.add('hidden'); el.textContent = '?'; }
+  else {
+    el.style.background = PALETTE[b.color];
+    el.textContent = opts.count != null ? opts.count : b.count;
+    const ant = document.createElement('span');
+    ant.className = 'ant'; ant.textContent = '🐜';
+    el.appendChild(ant);
+  }
+  if (b.linkTag) {
+    const l = document.createElement('span');
+    l.className = 'link'; l.textContent = '🔗' + b.linkTag;
+    el.appendChild(l);
+  }
+  return el;
+}
+
+function renderUI() {
+  S.uiDirty = false;
+  const slotsEl = $('slots');
+  slotsEl.innerHTML = '';
+  for (let i = 0; i < S.maxSlots; i++) {
+    const d = document.createElement('div');
+    d.className = 'slot' + (i >= BASE_SLOTS ? ' extra' : '');
+    const s = S.slots[i];
+    if (s) {
+      const b = boxEl(s.box, { count: s.remaining });
+      if (s.fresh) { b.classList.add('pop'); s.fresh = false; }
+      if (s.stuck) {
+        b.classList.add('stuck');
+        const z = document.createElement('span');
+        z.className = 'zzz'; z.textContent = '💤';
+        d.appendChild(z);
+      }
+      d.appendChild(b);
+    }
+    slotsEl.appendChild(d);
+  }
+
+  if (!S.trayDirty) return;
+  S.trayDirty = false;
+  const tray = $('tray');
+  tray.innerHTML = '';
+  S.cols.forEach((col, ci) => {
+    const d = document.createElement('div');
+    d.className = 'col';
+    if (!col.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      d.appendChild(e);
+    }
+    col.slice(0, 3).forEach((b, k) => {
+      const el = boxEl(b);
+      if (k === 0) {
+        el.classList.add('top');
+        if (S.hintId === b.id) el.classList.add('hint');
+        el.addEventListener('pointerdown', () => tapColumn(ci));
+      } else {
+        el.classList.add('buried');
+        if (k === 2) el.classList.add('b2');
+      }
+      d.appendChild(el);
+    });
+    if (col.length > 3) {
+      const m = document.createElement('div');
+      m.className = 'more'; m.textContent = '+' + (col.length - 3);
+      d.appendChild(m);
+    }
+    tray.appendChild(d);
+  });
+}
+
+function shakeCol(ci) {
+  const el = $('tray').children[ci];
+  if (!el) return;
+  el.classList.remove('shake');
+  void el.offsetWidth;
+  el.classList.add('shake');
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function artCanvas(n, px) {
+  const { grid, R, C } = buildGrid(n);
+  const c = document.createElement('canvas');
+  c.width = C * px; c.height = R * px;
+  const g = c.getContext('2d');
+  for (let r = 0; r < R; r++)
+    for (let k = 0; k < C; k++) {
+      g.fillStyle = PALETTE[grid[r][k]];
+      g.fillRect(k * px, r * px, px, px);
+    }
+  return c;
+}
+
+// ---------- Modals ----------
+function showModal(build) {
+  const card = $('card');
+  card.innerHTML = '';
+  build(card);
+  $('modal').classList.add('show');
+}
+function hideModal() { $('modal').classList.remove('show'); }
+
+function button(label, onClick, ghost) {
+  const b = document.createElement('button');
+  b.className = 'btn' + (ghost ? ' ghost' : '');
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function onWin() {
+  const n = S.n;
+  save.done[n] = true;
+  save.unlocked = Math.max(save.unlocked, Math.min(MAX_LEVEL, n + 1));
+  persist();
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => blip(f, 0.18, 0.06, 'triangle'), i * 110));
+  showModal(card => {
+    card.insertAdjacentHTML('beforeend', `<h2>Уровень пройден! 🎉</h2><p>Картинка «${S.art.name}» добавлена в коллекцию</p>`);
+    card.appendChild(artCanvas(n, 14));
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.appendChild(button('Уровни', openLevels, true));
+    if (n < MAX_LEVEL) row.appendChild(button('Дальше ▶', () => startLevel(n + 1)));
+    else row.appendChild(button('Все уровни пройдены! ↻', () => startLevel(1)));
+    card.appendChild(row);
+  });
+}
+
+function onLose() {
+  blip(220, 0.3, 0.06, 'sawtooth');
+  showModal(card => {
+    card.insertAdjacentHTML('beforeend', `<h2>Колония застряла 🐜</h2>
+      <p>Все слоты заняты, а муравьям некуда идти. Сначала открывай путь к нужным цветам.</p>`);
+    const row = document.createElement('div');
+    row.className = 'row';
+    if (!S.rescued) {
+      row.appendChild(button('+1 слот и продолжить', () => {
+        S.rescued = true;
+        S.maxSlots = BASE_SLOTS + 1;
+        S.over = false;
+        S.uiDirty = true;
+        hideModal();
+      }));
+    }
+    row.appendChild(button('Заново ↻', () => startLevel(S.n), !S.rescued));
+    card.appendChild(row);
+  });
+}
+
+function openLevels() {
+  showModal(card => {
+    const done = Object.keys(save.done).length;
+    card.insertAdjacentHTML('beforeend', `<h2>Уровни</h2><p>Собрано картинок: ${done} / ${MAX_LEVEL}</p>`);
+    const grid = document.createElement('div');
+    grid.className = 'levels';
+    for (let n = 1; n <= MAX_LEVEL; n++) {
+      const d = document.createElement('div');
+      d.className = 'lvl';
+      if (n > save.unlocked) { d.classList.add('locked'); d.textContent = '🔒'; }
+      else {
+        if (save.done[n]) d.appendChild(artCanvas(n, 4));
+        else d.textContent = n;
+        d.title = 'Уровень ' + n;
+        d.addEventListener('click', () => startLevel(n));
+      }
+      if (S && S.n === n) d.classList.add('cur');
+      grid.appendChild(d);
+    }
+    card.appendChild(grid);
+    const row = document.createElement('div');
+    row.className = 'row';
+    if (S && !S.over) row.appendChild(button('Закрыть', hideModal, true));
+    card.appendChild(row);
+  });
+}
+
+function showHint() {
+  if (!S || S.over) return;
+  let best = null;
+  for (let ci = 0; ci < S.cols.length; ci++) {
+    const b = S.cols[ci][0];
+    if (b && (!best || b.id < best.id)) best = b;
+  }
+  if (!best) { toast('Коробок больше нет — жди муравьёв'); return; }
+  S.hintId = best.id;
+  S.uiDirty = S.trayDirty = true;
+}
+
+// ---------- Wiring ----------
+$('btnLevels').addEventListener('click', openLevels);
+$('btnRestart').addEventListener('click', () => startLevel(S.n));
+$('btnHint').addEventListener('click', showHint);
+$('btnSpeed').addEventListener('click', e => {
+  speedMul = speedMul === 1 ? 2.5 : 1;
+  e.currentTarget.classList.toggle('on', speedMul !== 1);
+});
+$('btnSound').addEventListener('click', e => {
+  muted = !muted;
+  e.currentTarget.textContent = muted ? '🔇' : '🔊';
+});
+new ResizeObserver(layout).observe($('boardWrap'));
+window.addEventListener('resize', layout);
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt * speedMul);
+  draw(now / 1000);
+  requestAnimationFrame(frame);
+}
+
+startLevel(Math.min(save.current || 1, save.unlocked));
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
